@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Block GTA 6 on LinkedIn</title>
+<meta name="description" content="One button. It hides every LinkedIn post that mentions GTA 6.">
+<style>
+  /* One word on a white page, centered. Nothing else competes with it. */
+  :root {
+    --paper: #FFFFFF;
+    --ink: #000000;
+    --quiet: #6B6B6B;
+    --face: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color-scheme: light;
+  }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--face);
+    display: grid;
+    place-items: center;
+    padding: 0 16px;
+    text-align: center;
+  }
+  main {
+    display: grid;
+    justify-items: center;
+    gap: 1.75rem;
+  }
+  #push {
+    color: var(--ink);
+    text-decoration: none;
+    font-size: clamp(3.5rem, 13vw, 11rem);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    cursor: grab;
+  }
+  #push:focus-visible { outline: 3px solid var(--ink); outline-offset: 10px; }
+  #said {
+    margin: 0;
+    max-width: 34ch;
+    color: var(--quiet);
+    font-size: 1.0625rem;
+    line-height: 1.45;
+  }
+</style>
+</head>
+<body>
+<main>
+  <a id="push" href="#" aria-describedby="said">Block GTA 6</a>
+  <p id="said" role="status">Drag it to your bookmarks bar. Click it on LinkedIn.</p>
+</main>
+
+<script>
+/* The whole product. This function is serialized into the bookmark,
+   so it must stay self-contained: no outside variables, no innerHTML. */
+function blockGta6() {
+  var W = window, D = document, KEY = '__blockGta6', ATTR = 'data-gta6-blocked', TOAST = 'gta6-blocked-toast';
+
+  function say(msg) {
+    var t = D.getElementById(TOAST);
+    if (!t) {
+      t = D.createElement('div');
+      t.id = TOAST;
+      t.setAttribute('role', 'status');
+      t.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:2147483647;' +
+        'background:#000;color:#fff;font:700 15px/1.3 Helvetica,Arial,sans-serif;padding:12px 18px;' +
+        'border-radius:4px;max-width:90vw;text-align:center;pointer-events:none';
+      (D.body || D.documentElement).appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.display = 'block';
+    clearTimeout(t._hide);
+    t._hide = setTimeout(function () { t.style.display = 'none'; }, 4500);
+  }
+
+  if (!/(^|\.)linkedin\.com$/i.test(location.hostname)) {
+    say('This only works on LinkedIn. Open LinkedIn, then click it.');
+    return;
+  }
+  if (W[KEY]) { W[KEY](); return; }
+
+  var MAYBE = /gta|grand\s+theft/i;
+  var PHRASE = /\b(?:gta|grand\s+theft\s+auto)[\s \-_:.]*(?:6|vi|six)\b/i;
+
+  /* The nearest ancestor that is one piece of content: a comment, a post,
+     a search result, a news item. */
+  var UNIT = [
+    '.comments-comment-entity', '.comments-comment-item',
+    '[data-urn^="urn:li:activity"]', '[data-id^="urn:li:activity"]',
+    '[data-urn^="urn:li:share"]', '[data-urn^="urn:li:ugcPost"]', '[data-id^="urn:li:aggregate"]',
+    '.feed-shared-update-v2', '[data-view-name="feed-full-update"]',
+    '.reusable-search__result-container', '[data-chameleon-result-urn]',
+    'article', '[role="article"]', '[role="listitem"]', 'li'
+  ].join(',');
+  var SKIP = '[' + ATTR + '],script,style,noscript,code,textarea,input,[contenteditable=""],[contenteditable="true"],[role="textbox"],#' + TOAST;
+
+  var counted = new WeakSet(), total = 0, queued = false;
+
+  function scan() {
+    queued = false;
+    if (!D.body) return;
+
+    var old = D.querySelectorAll('[' + ATTR + ']'), i;
+    for (i = 0; i < old.length; i++) {
+      if (!PHRASE.test(old[i].textContent)) {
+        old[i].style.removeProperty('display');
+        old[i].removeAttribute(ATTR);
+      }
+    }
+
+    var walker = D.createTreeWalker(D.body, NodeFilter.SHOW_TEXT), node, hits = [];
+    while ((node = walker.nextNode())) {
+      var text = node.nodeValue;
+      if (text.length < 3 || !MAYBE.test(text)) continue;
+      var parent = node.parentElement;
+      if (!parent || parent.closest(SKIP)) continue;
+      if (!PHRASE.test(text)) {
+        /* The phrase can be split across inline elements. */
+        var wider = parent.parentElement && parent.parentElement.textContent.length < 600 ? parent.parentElement : parent;
+        if (!PHRASE.test(wider.textContent)) continue;
+      }
+      var unit = parent.closest(UNIT);
+      if (!unit || unit === D.body || unit.querySelector('main')) continue;
+      if (unit.querySelector('[contenteditable="true"]:focus,[role="textbox"]:focus,textarea:focus')) continue;
+      hits.push(unit);
+    }
+
+    for (i = 0; i < hits.length; i++) {
+      var el = hits[i];
+      /* Take empty wrappers with it so no blank card is left behind. */
+      while (el.parentElement && el.parentElement !== D.body && el.parentElement.tagName !== 'MAIN' &&
+             el.parentElement.children.length === 1 && !el.parentElement.matches('[role="list"],ul,ol')) {
+        el = el.parentElement;
+      }
+      if (el.hasAttribute(ATTR)) continue;
+      el.setAttribute(ATTR, '');
+      el.style.setProperty('display', 'none', 'important');
+      if (!counted.has(el)) { counted.add(el); total++; }
+    }
+  }
+
+  function queue() {
+    if (queued) return;
+    queued = true;
+    setTimeout(scan, 250);
+  }
+
+  scan();
+  new MutationObserver(queue).observe(D.documentElement, { childList: true, subtree: true, characterData: true });
+
+  W[KEY] = function () { scan(); say('Still blocking GTA 6. ' + total + ' hidden so far.'); };
+  say('Blocking GTA 6. ' + total + ' hidden so far.');
+}
+
+(function () {
+  var code = 'javascript:' + encodeURIComponent('(' + blockGta6.toString() + ')();');
+  var push = document.getElementById('push');
+  var said = document.getElementById('said');
+
+  push.setAttribute('href', code);
+  push.addEventListener('click', function (e) {
+    e.preventDefault();
+    said.textContent = 'Not here. Drag it to your bookmarks bar, then click it on LinkedIn.';
+  });
+})();
+</script>
+</body>
+</html>
